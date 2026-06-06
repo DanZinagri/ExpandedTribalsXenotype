@@ -1,0 +1,4 @@
+E:\SteamLibrary\steamapps\common\RimWorld\Mods\ExpandedTribalsXenotype\Source\ExpandedTribalsXenotype\obj\Debug\ExpandedTribalsXenotype.csproj.AssemblyReference.cache
+E:\SteamLibrary\steamapps\common\RimWorld\Mods\ExpandedTribalsXenotype\Source\ExpandedTribalsXenotype\obj\Debug\ExpandedTribalsXenotype.csproj.CoreCompileInputs.cache
+E:\SteamLibrary\steamapps\common\RimWorld\Mods\ExpandedTribalsXenotype\1.6\Assemblies\ExpandedTribalsXenotype.dll
+E:\SteamLibrary\steamapps\common\RimWorld\Mods\ExpandedTribalsXenotype\Source\ExpandedTribalsXenotype\obj\Debug\ExpandedTribalsXenotype.dll

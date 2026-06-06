@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ModMetaData>
+	<name>Expanded Tribals Xenotype</name>
+	<author>DanZinagri</author>
+	<supportedVersions>
+		<li>1.6</li>
+	</supportedVersions>
+	<packageId>DanZinagri.ExpandedTribalsXenotype</packageId>
+    <modVersion>1.0</modVersion>
+	<description>
+	I felt the VFE Tribals wild man was disappointing that it could only spawn baseliners; but i understand it doesn't really interact with biotech either; so i decided to make a mod to patch the list with any xenotype you want; even remove baseliners from the list.
+	</description>
+	<loadAfter>
+		<li>Ludeon.RimWorld</li>
+		<li>Ludeon.Biotech</li>
+		<li>oskarpotocki.vfe.tribals</li>
+	</loadAfter>
+</ModMetaData>
