@@ -38,6 +38,8 @@ namespace ExpandedTribalsXenotype
 
         private Vector2 scrollPosition;
 
+        private string searchText = "";
+
         public override void ExposeData()
         {
             Scribe_Collections.Look(
@@ -50,27 +52,25 @@ namespace ExpandedTribalsXenotype
 
         public void DoSettingsWindowContents(Rect inRect)
         {
-            //lol, well i tried doing a side-by-side box list, but that was too much effort; so maximum lazy.
-            List<XenotypeDef> xenotypes = DefDatabase<XenotypeDef>.AllDefsListForReading
+            //lol, well i tried doing a side-by-side box list, but that was too much effort; so maximum lazy.    
+            List<XenotypeDef> allXenotypes = DefDatabase<XenotypeDef>.AllDefsListForReading
                 .Where(x => x != null)
                 .OrderBy(x => x.label)
                 .ToList();
 
-            Rect viewRect = new Rect(
-                0f,
-                0f,
-                inRect.width - 16f,
-                xenotypes.Count * 32f + 120f);
-
-            Widgets.BeginScrollView(inRect, ref scrollPosition, viewRect);
-
+            Rect searchRect = new Rect(
+                inRect.x, 
+                inRect.y, 
+                inRect.width, 
+                92f);
             Listing_Standard listing = new Listing_Standard();
-            listing.Begin(viewRect);
-            listing.GapLine();
+            listing.Begin(searchRect);
+            //searchText = Widgets.TextField(searchRect, searchText);
+            searchText = listing.TextEntry(searchText);
 
             if (listing.ButtonText("ExpandedTribalsXenotypeSelectAll".Translate()))
             {
-                selectedXenotypeDefNames = xenotypes
+                selectedXenotypeDefNames = allXenotypes
                     .Select(x => x.defName)
                     .ToList();
             }
@@ -79,14 +79,45 @@ namespace ExpandedTribalsXenotype
             {
                 selectedXenotypeDefNames.Clear();
             }
-
             listing.GapLine();
+            listing.End();
 
-            foreach (XenotypeDef xenotype in xenotypes)
+            float controlsBottom = listing.CurHeight + 8f; //searchRect.yMax + 8f;
+            Rect scrollRect = new Rect(
+                inRect.x,
+                inRect.y + controlsBottom,
+                inRect.width,
+                inRect.height - controlsBottom);
+
+            List<XenotypeDef> visibleXenotypes = allXenotypes;
+
+            if (!searchText.NullOrEmpty())
+            {
+                string search = searchText.ToLower();
+
+                visibleXenotypes = allXenotypes
+                    .Where(x =>
+                        x.label.ToLower().Contains(search) ||
+                        x.defName.ToLower().Contains(search))
+                    .ToList();
+            }
+
+            Rect viewRect = new Rect(
+                0f,
+                0f,
+                scrollRect.width - 16f,
+                visibleXenotypes.Count * 36f + 20f);
+
+            Widgets.BeginScrollView(scrollRect, ref scrollPosition, viewRect);
+
+            Listing_Standard scrolllisting = new Listing_Standard();
+            scrolllisting.Begin(viewRect);
+
+            foreach (XenotypeDef xenotype in visibleXenotypes)
             {
                 bool selected = selectedXenotypeDefNames.Contains(xenotype.defName);
 
-                listing.CheckboxLabeled(
+                scrolllisting.CheckboxLabeled(
                     xenotype.LabelCap,
                     ref selected,
                     xenotype.description);
@@ -102,12 +133,12 @@ namespace ExpandedTribalsXenotype
                 }
             }
 
-            listing.End();
+            scrolllisting.End();
             Widgets.EndScrollView();
 
             selectedXenotypeDefNames = selectedXenotypeDefNames
                 .Distinct()
-                .Where(defName => xenotypes.Any(x => x.defName == defName))
+                .Where(defName => allXenotypes.Any(x => x.defName == defName))
                 .ToList();
         }
     }
