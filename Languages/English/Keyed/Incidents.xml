@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<LanguageData>
+  <WildManWishesToJoinDesc>{0} is a {2} and wandering near nearby, hoping you may need someone to join the colony.\n\n{1} is a {3} year old {4}</WildManWishesToJoinDesc>
+  <WildJoinAccept>Accept</WildJoinAccept>
+  <WildJoinReject>Reject</WildJoinReject>
+  <WildJoinInspect>Inspect</WildJoinInspect>
+  <WildJoinWish>Wild Man Wishes to Join</WildJoinWish>
+</LanguageData>

@@ -3,4 +3,6 @@
     <ExpandedTribalsXenotypeTitle>Expanded Tribals Xenotype</ExpandedTribalsXenotypeTitle>
     <ExpandedTribalsXenotypeSelectAll>Select All</ExpandedTribalsXenotypeSelectAll>
     <ExpandedTribalsXenotypeClearAll>Clear All</ExpandedTribalsXenotypeClearAll>
+    <ExpandedTribalsXenotypePromptSetting>Allow/Deny Wild Men Joining</ExpandedTribalsXenotypePromptSetting>
+    <ExpandedTribalsXenotypePromptDesc>When enabled, the Tribal Gathering wild man reward is held in a letter with Accept/Reject. When disabled, VFE Tribals behaves normally.</ExpandedTribalsXenotypePromptDesc>
 </LanguageData>
