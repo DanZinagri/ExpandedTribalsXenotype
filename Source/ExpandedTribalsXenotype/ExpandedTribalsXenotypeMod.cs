@@ -163,9 +163,53 @@ namespace ExpandedTribalsXenotype
                 "xenotypeChances",
                 BindingFlags.Instance | BindingFlags.NonPublic);
 
+        // Whatever VFE Tribals (or another mod patching it) left on the def before we
+        // ever touched it. Captured once so Clear All can actually put it back.
+        private static PawnKindDef wildpersonCached;
+        private static XenotypeSet originalXenotypeSet;
+        private static bool originalUseFactionXenotypes;
+        private static bool originalsCaptured;
+
+        // Only chat in the log when the applied state actually changed, otherwise every
+        // settings-window close writes a line.
+        private static int lastAppliedCount = -1;
+
         static ExpandedTribalsXenotypePatcher()
         {
             LongEventHandler.ExecuteWhenFinished(Apply);
+        }
+
+        private static PawnKindDef Wildperson
+        {
+            get
+            {
+                if (wildpersonCached == null)
+                    wildpersonCached = DefDatabase<PawnKindDef>.GetNamedSilentFail("VFET_Wildperson");
+
+                return wildpersonCached;
+            }
+        }
+
+        /// <summary>
+        /// Puts VFET_Wildperson back the way we found it. Safe to call repeatedly.
+        /// </summary>
+        private static void Restore(string reason)
+        {
+            if (!originalsCaptured)
+                return;
+
+            PawnKindDef wildperson = Wildperson;
+            if (wildperson == null)
+                return;
+
+            wildperson.xenotypeSet = originalXenotypeSet;
+            wildperson.useFactionXenotypes = originalUseFactionXenotypes;
+
+            if (lastAppliedCount != 0)
+            {
+                lastAppliedCount = 0;
+                Log.Message($"[ExpandedTribalsXenotype] {reason} VFET_Wildperson restored to its unpatched state; back to vanilla behaviour.");
+            }
         }
 
         public static void Apply()
@@ -173,19 +217,36 @@ namespace ExpandedTribalsXenotype
             if (!ModsConfig.BiotechActive)
                 return;
 
-            PawnKindDef wildperson =
-                DefDatabase<PawnKindDef>.GetNamedSilentFail("VFET_Wildperson");
+            PawnKindDef wildperson = Wildperson;
 
             if (wildperson == null)
             {
-                Log.Warning("[ExpandedTribalsXenotype] VFET_Wildperson Probably means you don't have VFE Tribals installed.");
+                if (lastAppliedCount != -2)
+                {
+                    lastAppliedCount = -2;
+                    Log.Warning("[ExpandedTribalsXenotype] VFET_Wildperson Probably means you don't have VFE Tribals installed.");
+                }
                 return;
+            }
+
+            if (XenotypeChancesField == null)
+            {
+                Log.Error("[ExpandedTribalsXenotype] Couldn't find XenotypeSet.xenotypeChances; RimWorld's internals changed and this mod needs an update.");
+                return;
+            }
+
+            // Grab the pristine values before the first mutation so Restore() has a target.
+            if (!originalsCaptured)
+            {
+                originalXenotypeSet = wildperson.xenotypeSet;
+                originalUseFactionXenotypes = wildperson.useFactionXenotypes;
+                originalsCaptured = true;
             }
 
             if (ExpandedTribalsXenotypeMod.Settings == null ||
                 ExpandedTribalsXenotypeMod.Settings.selectedXenotypeDefNames.NullOrEmpty())
             {
-                Log.Warning("[ExpandedTribalsXenotype] No xenotypes selected. VFET_Wildperson was not patched; so its just gonna run as vanilla.");
+                Restore("No xenotypes selected.");
                 return;
             }
 
@@ -202,7 +263,7 @@ namespace ExpandedTribalsXenotype
 
             if (chances.Count == 0)
             {
-                Log.Warning("[ExpandedTribalsXenotype] Selected xenotypes were invalid. VFET_Wildperson was not patched; I'm not even sure how we got here.");
+                Restore("Selected xenotypes were all invalid.");
                 return;
             }
 
@@ -213,7 +274,11 @@ namespace ExpandedTribalsXenotype
             wildperson.xenotypeSet = set;
             wildperson.useFactionXenotypes = false;
 
-            Log.Message($"[ExpandedTribalsXenotype] Patched VFET_Wildperson with {chances.Count} xenotypes. Now you can start your tribal monster girl quest.");
+            if (lastAppliedCount != chances.Count)
+            {
+                lastAppliedCount = chances.Count;
+                Log.Message($"[ExpandedTribalsXenotype] Patched VFET_Wildperson with {chances.Count} xenotypes. Now you can start your tribal monster girl quest.");
+            }
         }
     }
 
@@ -235,12 +300,15 @@ namespace ExpandedTribalsXenotype
     {
         public static bool Prefix(TaggedString label, TaggedString text, LetterDef textLetterDef)
         {
-            if (ExpandedTribalsXenotypeMod.Settings?.enableWildManJoinPrompt != true)
-                return true;
-            if (label.Resolve() != "VFET_WildmanLetterLabel".Translate().Resolve())
+            // Cheapest check first: this runs for every letter in the game, and the
+            // context flag is false for all of them except the ritual outcome.
+            if (!Patch_TribalGatheringApplyContext.InTribalGatheringApply)
                 return true;
 
-            if (!Patch_TribalGatheringApplyContext.InTribalGatheringApply)
+            if (ExpandedTribalsXenotypeMod.Settings?.enableWildManJoinPrompt != true)
+                return true;
+
+            if (label.Resolve() != "VFET_WildmanLetterLabel".Translate().Resolve())
                 return true;
 
             return false;
@@ -270,14 +338,16 @@ namespace ExpandedTribalsXenotype
     {
         public static bool Prefix(Thing newThing, IntVec3 loc, Map map, WipeMode wipeMode, ref Thing __result)
         {
+            // GenSpawn.Spawn is one of the hottest paths in the game, so bail on the
+            // static bool before doing any casting or string comparison.
+            if (!Patch_TribalGatheringApplyContext.InTribalGatheringApply)
+                return true;
+
             if (ExpandedTribalsXenotypeMod.Settings?.enableWildManJoinPrompt != true)
                 return true;
 
             Pawn pawn = newThing as Pawn;
             if (pawn == null || pawn.kindDef?.defName != "VFET_Wildperson")
-                return true;
-
-            if (!Patch_TribalGatheringApplyContext.InTribalGatheringApply)
                 return true;
 
             __result = pawn;
