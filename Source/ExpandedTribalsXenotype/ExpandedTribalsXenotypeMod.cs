@@ -5,6 +5,7 @@ using RimWorld.QuestGen;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Reflection.Emit;
 using UnityEngine;
 using Verse;
 using VFETribals;
@@ -300,14 +301,13 @@ namespace ExpandedTribalsXenotype
     {
         public static bool Prefix(TaggedString label, TaggedString text, LetterDef textLetterDef)
         {
-            // Cheapest check first: this runs for every letter in the game, and the
-            // context flag is false for all of them except the ritual outcome.
-            if (!Patch_TribalGatheringApplyContext.InTribalGatheringApply)
+            // Cheapest check first: this runs for every letter in the game, and the flag
+            // is only ever true between our deferred spawn and VFET's announcement of it.
+            if (!Patch_TribalGatheringApplyContext.DeferredWildmanSpawn)
                 return true;
 
-            if (ExpandedTribalsXenotypeMod.Settings?.enableWildManJoinPrompt != true)
-                return true;
-
+            // Apply sends the ritual outcome letter too, so the label still has to be
+            // checked — otherwise that one would get swallowed as well.
             if (label.Resolve() != "VFET_WildmanLetterLabel".Translate().Resolve())
                 return true;
 
@@ -318,41 +318,96 @@ namespace ExpandedTribalsXenotype
     [HarmonyPatch(typeof(RitualOutcomeEffectWorker_TribalGathering), nameof(RitualOutcomeEffectWorker_TribalGathering.Apply))]
     public static class Patch_TribalGatheringApplyContext
     {
-        public static bool InTribalGatheringApply;
+        /// <summary>
+        /// Set only when we actually held a wild man back in a choice letter. Tying the
+        /// letter suppression to this rather than to "are we inside Apply" means that if
+        /// the transpiler ever fails to apply, VFET's own letter still gets through.
+        /// </summary>
+        public static bool DeferredWildmanSpawn;
 
         public static void Prefix()
         {
-            InTribalGatheringApply = true;
+            DeferredWildmanSpawn = false;
         }
 
         public static void Finalizer()
         {
-            InTribalGatheringApply = false;
+            DeferredWildmanSpawn = false;
         }
     }
 
 
-    [HarmonyPatch(typeof(GenSpawn), nameof(GenSpawn.Spawn),
-        new[] { typeof(Thing), typeof(IntVec3), typeof(Map), typeof(WipeMode) })]
+    /// <summary>
+    /// VFE Tribals generates, spawns and announces the wild man inline in one method, so
+    /// there is no seam to hook. Rather than patch GenSpawn.Spawn globally — it is a
+    /// one-line forwarder that the JIT would otherwise inline, and MoteMaker alone calls
+    /// it from 16 sites — swap out just the single call inside VFET's own method. That
+    /// costs nothing outside the ritual.
+    /// </summary>
+    [HarmonyPatch(typeof(RitualOutcomeEffectWorker_TribalGathering), nameof(RitualOutcomeEffectWorker_TribalGathering.Apply))]
     public static class Patch_TribalGatheringWildmanSpawn
     {
-        public static bool Prefix(Thing newThing, IntVec3 loc, Map map, WipeMode wipeMode, ref Thing __result)
+        private static readonly MethodInfo SpawnMethod =
+            AccessTools.Method(
+                typeof(GenSpawn),
+                nameof(GenSpawn.Spawn),
+                new[] { typeof(Thing), typeof(IntVec3), typeof(Map), typeof(WipeMode) });
+
+        private static readonly MethodInfo HookMethod =
+            AccessTools.Method(
+                typeof(Patch_TribalGatheringWildmanSpawn),
+                nameof(SpawnOrPrompt));
+
+        public static IEnumerable<CodeInstruction> Transpiler(IEnumerable<CodeInstruction> instructions)
         {
-            // GenSpawn.Spawn is one of the hottest paths in the game, so bail on the
-            // static bool before doing any casting or string comparison.
-            if (!Patch_TribalGatheringApplyContext.InTribalGatheringApply)
-                return true;
+            bool replaced = false;
 
-            if (ExpandedTribalsXenotypeMod.Settings?.enableWildManJoinPrompt != true)
-                return true;
+            foreach (CodeInstruction instruction in instructions)
+            {
+                if (!replaced && SpawnMethod != null && HookMethod != null && instruction.Calls(SpawnMethod))
+                {
+                    replaced = true;
+                    yield return new CodeInstruction(OpCodes.Call, HookMethod)
+                        .MoveLabelsFrom(instruction)
+                        .MoveBlocksFrom(instruction);
+                    continue;
+                }
 
+                yield return instruction;
+            }
+
+            if (!replaced)
+            {
+                Log.Error("[ExpandedTribalsXenotype] Couldn't find the GenSpawn.Spawn call in RitualOutcomeEffectWorker_TribalGathering.Apply. " +
+                          "VFE Tribals probably changed; the accept/reject prompt is disabled and wild men will just show up as normal.");
+            }
+        }
+
+        /// <summary>
+        /// Stands in for the GenSpawn.Spawn call VFE Tribals makes for the wild man.
+        /// Either spawns as normal, or holds the pawn in a choice letter.
+        /// </summary>
+        public static Thing SpawnOrPrompt(Thing newThing, IntVec3 loc, Map map, WipeMode wipeMode)
+        {
             Pawn pawn = newThing as Pawn;
-            if (pawn == null || pawn.kindDef?.defName != "VFET_Wildperson")
-                return true;
 
-            __result = pawn;
+            if (ExpandedTribalsXenotypeMod.Settings?.enableWildManJoinPrompt != true ||
+                pawn == null ||
+                map == null)
+            {
+                return GenSpawn.Spawn(newThing, loc, map, wipeMode);
+            }
 
-            ChoiceLetter_TribalGatheringWildmanWishesToJoin letter =  new ChoiceLetter_TribalGatheringWildmanWishesToJoin();
+            // The pawn is held unspawned until the player answers, so it needs to live in
+            // the world pawn list — otherwise nothing owns it, and the letter's reference
+            // has nothing to resolve against when the game is saved and reloaded.
+            // Pawn.SpawnSetup removes it from that list again if the player accepts.
+            if (!Find.WorldPawns.Contains(pawn))
+                Find.WorldPawns.PassToWorld(pawn, PawnDiscardDecideMode.KeepForever);
+
+            Patch_TribalGatheringApplyContext.DeferredWildmanSpawn = true;
+
+            ChoiceLetter_TribalGatheringWildmanWishesToJoin letter = new ChoiceLetter_TribalGatheringWildmanWishesToJoin();
 
             letter.def = LetterDefOf.RitualOutcomePositive;
             letter.Label = "WildJoinWish".Translate();
@@ -365,7 +420,7 @@ namespace ExpandedTribalsXenotype
 
             Find.LetterStack.ReceiveLetter(letter);
 
-            return false;
+            return pawn;
         }
     }
 
@@ -434,7 +489,14 @@ namespace ExpandedTribalsXenotype
         private void Reject()
         {
             if (pawn != null && !pawn.Destroyed)
-                Find.WorldPawns.PassToWorld(pawn, PawnDiscardDecideMode.Discard);
+            {
+                // The pawn was parked in the world pawn list while the letter was open, so
+                // it has to come back out of it — PassToWorld errors on a pawn already there.
+                if (Find.WorldPawns.Contains(pawn))
+                    Find.WorldPawns.RemoveAndDiscardPawnViaGC(pawn);
+                else
+                    Find.WorldPawns.PassToWorld(pawn, PawnDiscardDecideMode.Discard);
+            }
 
             Close();
         }
